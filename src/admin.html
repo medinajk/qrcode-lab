@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Laboratório — Painel Admin</title>
+  <link rel="stylesheet" href="/style.css"/>
+  <link rel="stylesheet" href="/admin.css"/>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="header-icon">
+      <svg viewBox="0 0 24 24">
+        <path d="M9 3v10l-5 6h16l-5-6V3"/>
+        <path d="M9 3h6"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Painel Administrativo</h1>
+      <p>Laboratório de Informática</p>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn-sm btn-outline" onclick="carregar()">↻ Atualizar</button>
+    <button class="btn-sm btn-danger"  onclick="limpar()">Limpar tudo</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Cards de estatísticas -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">No lab agora</div>
+      <div class="stat-val orange" id="s-ativos">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Registros hoje</div>
+      <div class="stat-val" id="s-hoje">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total geral</div>
+      <div class="stat-val" id="s-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Tempo médio</div>
+      <div class="stat-val green" id="s-media">—</div>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filters">
+    <input
+      type="text"
+      id="busca"
+      placeholder="Buscar por RA..."
+      oninput="filtrar()"
+    />
+    <select id="filtro" onchange="filtrar()">
+      <option value="all">Todos</option>
+      <option value="active">Presentes</option>
+      <option value="complete">Finalizados</option>
+    </select>
+  </div>
+
+  <!-- Tabela de registros -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>RA</th>
+          <th>Data</th>
+          <th>Entrada</th>
+          <th>Saída</th>
+          <th>Duração</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div id="last-update"></div>
+
+</main>
+
+<script>
+  let todosRegistros = [];
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function fmtTime(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+  function fmtDate(d) { return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; }
+
+  function formatarDuracao(ms) {
+    const s  = Math.floor(ms / 1000);
+    const m  = Math.floor(s / 60);
+    const sg = s % 60;
+    if (m < 60) return `${m}min ${pad(sg)}s`;
+    const h  = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}h ${pad(rm)}min`;
+  }
+
+  async function carregar() {
+    try {
+      const res  = await fetch("/admin/dados");
+      const data = await res.json();
+
+      todosRegistros = data.registros;
+      atualizarStats(data);
+      filtrar();
+
+      document.getElementById("last-update").textContent =
+        `Atualizado às ${fmtTime(new Date())}`;
+
+    } catch (e) {
+      console.error("Erro ao carregar dados:", e);
+    }
+  }
+
+  function atualizarStats(data) {
+    const hoje     = new Date().toDateString();
+    const hoje_    = data.registros.filter(r => new Date(r.entrada).toDateString() === hoje);
+    const completos = data.registros.filter(r => r.duracao_ms);
+    const avg      = completos.length
+      ? completos.reduce((a, b) => a + b.duracao_ms, 0) / completos.length
+      : 0;
+
+    document.getElementById("s-ativos").textContent = Object.keys(data.ativos).length;
+    document.getElementById("s-hoje").textContent   = hoje_.length;
+    document.getElementById("s-total").textContent  = data.registros.length;
+    document.getElementById("s-media").textContent  = completos.length ? formatarDuracao(avg) : "—";
+  }
+
+  function filtrar() {
+    const busca  = document.getElementById("busca").value.trim();
+    const filtro = document.getElementById("filtro").value;
+    const tbody  = document.getElementById("tbody");
+
+    const lista = todosRegistros.filter(r => {
+      const matchBusca  = !busca || r.ra.includes(busca);
+      const matchFiltro =
+        filtro === "all"      ? true :
+        filtro === "active"   ? !r.saida :
+        filtro === "complete" ? !!r.saida : true;
+      return matchBusca && matchFiltro;
+    });
+
+    if (lista.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="empty">
+            <strong>Nenhum registro encontrado</strong>
+            Os registros aparecerão aqui assim que os alunos fizerem check-in.
+          </td>
+        </tr>`;
+      return;
+    }
+
+    tbody.innerHTML = lista.map(r => {
+      const entradaD = new Date(r.entrada);
+      const saidaD   = r.saida ? new Date(r.saida) : null;
+      return `
+        <tr>
+          <td><span class="ra-badge">${r.ra}</span></td>
+          <td class="mono">${fmtDate(entradaD)}</td>
+          <td class="mono">${fmtTime(entradaD)}</td>
+          <td class="mono">${saidaD ? fmtTime(saidaD) : "—"}</td>
+          <td class="mono">${r.duracao_fmt || "—"}</td>
+          <td>
+            ${r.saida
+              ? `<span class="pill pill-out">Saiu</span>`
+              : `<span class="pill pill-in">No lab</span>`}
+          </td>
+        </tr>`;
+    }).join("");
+  }
+
+  async function limpar() {
+    if (!confirm("Apagar todos os registros? Esta ação não pode ser desfeita.")) return;
+    await fetch("/admin/limpar", { method: "POST" });
+    carregar();
+  }
+
+  // Carrega ao iniciar e atualiza a cada 30 segundos
+  carregar();
+  setInterval(carregar, 30000);
+</script>
+
+</body>
+</html>

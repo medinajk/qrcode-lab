@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Laboratório — Registro de Acesso</title>
+  <link rel="stylesheet" href="/style.css"/>
+  <link rel="stylesheet" href="/checkin.css"/>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- Formulário de entrada do RA -->
+  <div id="formulario">
+    <div class="header">
+      <div class="icon-wrap">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 3v10l-5 6h16l-5-6V3"/>
+          <path d="M9 3h6"/>
+        </svg>
+      </div>
+      <div class="header-text">
+        <h1>Laboratório</h1>
+        <p>Registro de acesso</p>
+      </div>
+    </div>
+
+    <label for="ra">RA do Aluno</label>
+    <input
+      type="text"
+      id="ra"
+      inputmode="numeric"
+      maxlength="6"
+      placeholder="000000"
+      autocomplete="off"
+      autofocus
+      oninput="handleInput(this)"
+    />
+    <p class="hint">Digite seu RA de 6 dígitos</p>
+
+    <div class="error-msg" id="error-msg"></div>
+
+    <button class="btn-primary" id="btn-submit" disabled onclick="enviar()">Registrar acesso</button>
+  </div>
+
+  <!-- Tela exibida após o registro -->
+  <div id="resultado">
+    <div class="result-icon" id="result-icon">
+      <svg id="result-svg" viewBox="0 0 24 24"></svg>
+    </div>
+    <div class="result-title" id="result-title"></div>
+    <div class="result-time"  id="result-time"></div>
+    <div class="result-meta"  id="result-meta"></div>
+    <button class="btn-novo" onclick="resetar()">Novo registro</button>
+  </div>
+
+</div>
+
+<script>
+  let resetTimer = null;
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function fmtTime(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+  function fmtDate(d) { return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; }
+
+  function handleInput(el) {
+    const v = el.value.replace(/\D/g, "").slice(0, 6);
+    el.value = v;
+
+    const btn = document.getElementById("btn-submit");
+    const err = document.getElementById("error-msg");
+
+    err.style.display = "none";
+    btn.disabled = v.length !== 6;
+    btn.className = "btn-primary";
+    btn.textContent = "Registrar acesso";
+  }
+
+  async function enviar() {
+    const ra = document.getElementById("ra").value.replace(/\D/g, "");
+    if (ra.length !== 6) return;
+
+    const btn = document.getElementById("btn-submit");
+    btn.disabled = true;
+    btn.textContent = "Aguarde...";
+
+    try {
+      const res  = await fetch("/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ra }),
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        const err = document.getElementById("error-msg");
+        err.textContent    = data.mensagem;
+        err.style.display  = "block";
+        btn.disabled       = false;
+        btn.textContent   = "Registrar acesso";
+      btn.className     = "btn-primary";
+      return;
+    }
+
+    mostrarResultado(data);
+
+    } catch {
+      const err = document.getElementById("error-msg");
+      err.textContent   = "Erro de conexão. Tente novamente.";
+      err.style.display = "block";
+      btn.disabled      = false;
+      btn.textContent   = "Registrar acesso";
+    }
+  }
+
+  function mostrarResultado(data) {
+    document.getElementById("formulario").style.display = "none";
+
+    const resultado = document.getElementById("resultado");
+    resultado.style.display = "block";
+
+    const isEntrada = data.tipo === "entrada";
+    const agora     = new Date();
+
+    const icon      = document.getElementById("result-icon");
+    icon.className  = `result-icon ${data.tipo}`;
+
+    const svg       = document.getElementById("result-svg");
+    svg.innerHTML   = isEntrada
+      ? `<polyline points="20 6 9 17 4 12"/>`
+      : `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+         <polyline points="16 17 21 12 16 7"/>
+         <line x1="21" y1="12" x2="9" y2="12"/>`;
+
+    document.getElementById("result-title").textContent =
+      isEntrada ? "Entrada registrada!" : "Saída registrada!";
+
+    document.getElementById("result-time").textContent = fmtTime(agora);
+
+    const reg = data.registro;
+    let meta  = `RA: <strong>${reg.ra}</strong><br>${fmtDate(agora)}`;
+
+    if (!isEntrada && reg.duracao_fmt) {
+      meta += `<br>Entrada às: <strong>${fmtTime(new Date(reg.entrada))}</strong>`;
+      meta += `<br>Tempo no laboratório: <strong>${reg.duracao_fmt}</strong>`;
+    }
+
+    document.getElementById("result-meta").innerHTML = meta;
+
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(resetar, 8000);
+  }
+
+  function resetar() {
+    clearTimeout(resetTimer);
+
+    document.getElementById("resultado").style.display  = "none";
+    document.getElementById("formulario").style.display = "block";
+
+    const ra  = document.getElementById("ra");
+    const btn = document.getElementById("btn-submit");
+    const err = document.getElementById("error-msg");
+
+    ra.value          = "";
+    btn.disabled      = true;
+    btn.textContent   = "Registrar acesso";
+    btn.className     = "btn-primary";
+    err.style.display = "none";
+
+    ra.focus();
+  }
+</script>
+
+</body>
+</html>

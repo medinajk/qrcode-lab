@@ -1,0 +1,14 @@
+{
+  "name": "lab-checkin",
+  "version": "1.0.0",
+  "description": "Sistema de registro de acesso ao laboratório via QR Code",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "generate-qr": "node src/generateQR.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "qrcode": "^1.5.3"
+  }
+}
