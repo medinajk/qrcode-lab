@@ -13,6 +13,7 @@
 
 const express = require("express");
 const path    = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const db      = require("./database");
 
 const app  = express();
@@ -34,23 +35,28 @@ app.get("/", (req, res) => {
 
 // ─── API de check-in ─────────────────────────────────────────────────────────
 
-app.post("/checkin", (req, res) => {
-  const { ra } = req.body;
+app.post("/checkin", async (req, res) => {
+  try {
+    const { ra } = req.body;
 
-  // Validação
-  if (!ra || !/^\d{6}$/.test(ra)) {
-    return res.status(400).json({ ok: false, mensagem: "RA inválido. Informe exatamente 6 dígitos." });
-  }
+    // Validação
+    if (!ra || !/^\d{6}$/.test(ra)) {
+      return res.status(400).json({ ok: false, mensagem: "RA inválido. Informe exatamente 6 dígitos." });
+    }
 
-  // Verifica se já está no laboratório (saída) ou não (entrada)
-  const ativos = db.listarAtivos();
+    // Verifica se já está no laboratório (saída) ou não (entrada)
+    const ativos = await db.listarAtivos();
 
-  if (ativos[ra]) {
-    const resultado = db.registrarSaida(ra);
-    return res.json(resultado);
-  } else {
-    const resultado = db.registrarEntrada(ra);
-    return res.json(resultado);
+    if (ativos[ra]) {
+      const resultado = await db.registrarSaida(ra);
+      return res.json(resultado);
+    } else {
+      const resultado = await db.registrarEntrada(ra);
+      return res.json(resultado);
+    }
+  } catch (err) {
+    console.error("Erro no check-in:", err);
+    return res.status(500).json({ ok: false, mensagem: "Erro ao registrar acesso." });
   }
 });
 
@@ -60,16 +66,27 @@ app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
-app.get("/admin/dados", (req, res) => {
-  res.json({
-    registros: db.listarRegistros(),
-    ativos:    db.listarAtivos(),
-  });
+app.get("/admin/dados", async (req, res) => {
+  try {
+    res.json({
+      registros: await db.listarRegistros(),
+      ativos:    await db.listarAtivos(),
+      storage:   db.storageMode(),
+    });
+  } catch (err) {
+    console.error("Erro ao carregar dados:", err);
+    res.status(500).json({ registros: [], ativos: {}, storage: db.storageMode(), erro: true });
+  }
 });
 
-app.post("/admin/limpar", (req, res) => {
-  db.limparTudo();
-  res.json({ ok: true, mensagem: "Todos os registros foram apagados." });
+app.post("/admin/limpar", async (req, res) => {
+  try {
+    await db.limparTudo();
+    res.json({ ok: true, mensagem: "Todos os registros foram apagados." });
+  } catch (err) {
+    console.error("Erro ao limpar dados:", err);
+    res.status(500).json({ ok: false, mensagem: "Erro ao limpar registros." });
+  }
 });
 
 // ─── Inicia servidor ─────────────────────────────────────────────────────────

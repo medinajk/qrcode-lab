@@ -18,7 +18,7 @@ npm start
 
 # 3. Em outro terminal, gerar o QR Code
 #    Substitua pelo IP real da máquina na rede local
-node src/generateQR.js http://192.168.1.100:3000
+node src/generate-qrcode.js http://192.168.1.100:3000
 ```
 
 ## Como usar
@@ -29,7 +29,7 @@ node src/generateQR.js http://192.168.1.100:3000
 
 ### 2. Gerar e imprimir o QR Code
 ```bash
-node src/generateQR.js http://192.168.1.100:3000
+node src/generate-qrcode.js http://192.168.1.100:3000
 ```
 O arquivo `src/data/qrcode.png` será criado. Imprima e fixe na entrada do laboratório.
 
@@ -52,7 +52,14 @@ http://192.168.1.100:3000/admin
 
 ## Dados armazenados
 
-Os registros ficam em `src/data/registros.json` com o seguinte formato:
+Por padrão, os registros ficam em `src/data/registros.json`. Se o Firebase estiver configurado, os registros passam a ficar no **Cloud Firestore**, usando as coleções `registros` e `ativos`.
+
+Essa evolução permite relacionar o projeto com dois pilares da Indústria 4.0:
+
+- **Big Data:** histórico de entradas, saídas e tempo de permanência para análise de uso do laboratório.
+- **Armazenamento em nuvem:** persistência dos registros no Firebase/Firestore, com menor dependência do computador local.
+
+Formato dos registros:
 
 ```json
 {
@@ -86,4 +93,53 @@ PORT=8080 npm start
 | Pacote | Versão | Uso |
 |---|---|---|
 | `express` | ^4.18.2 | Servidor web e roteamento |
+| `firebase-admin` | ^12.7.0 | Integração com Firebase Cloud Firestore |
 | `qrcode` | ^1.5.3 | Geração do QR Code em PNG |
+
+## Armazenamento em nuvem com Firebase
+
+Para ativar o pilar de armazenamento em nuvem:
+
+1. No Firebase Console, crie ou abra o projeto.
+2. Ative o **Cloud Firestore**.
+3. Em **Configurações do projeto > Contas de serviço**, gere uma nova chave privada JSON.
+4. Salve esse arquivo fora do repositório, por exemplo:
+   `C:\firebase\qrcode-lab-service-account.json`
+5. Crie um arquivo `.env` na raiz do projeto, ao lado de `package.json`:
+
+```text
+D:\wamp64\www\QRCODE\.env
+```
+
+Conteúdo do `.env`:
+
+```env
+PORT=3000
+FIREBASE_SERVICE_ACCOUNT=C:\firebase\qrcode-lab-service-account.json
+```
+
+Depois inicie o servidor:
+
+```powershell
+npm start
+```
+
+Alternativa sem `.env`: configure a variável de ambiente direto no terminal.
+
+No PowerShell:
+
+```powershell
+$env:FIREBASE_SERVICE_ACCOUNT="C:\firebase\qrcode-lab-service-account.json"
+npm start
+```
+
+No Prompt de Comando:
+
+```bat
+set FIREBASE_SERVICE_ACCOUNT=C:\firebase\qrcode-lab-service-account.json
+npm start
+```
+
+Quando o Firebase estiver ativo, o painel administrativo mostrará **Armazenamento: Nuvem**. Sem Firebase, o sistema continua funcionando em modo local com JSON.
+
+> Nunca envie o arquivo de credenciais JSON para o GitHub, Drive público ou AVA.

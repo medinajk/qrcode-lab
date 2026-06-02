@@ -1,1 +1,8 @@
 
+.env
+firebase-service-account*.json
+serviceAccount*.json
+src/data/registros.json
+src/data/
+outputs/
+node_modules/

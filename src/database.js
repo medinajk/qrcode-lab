@@ -1,17 +1,62 @@
 /**
  * database.js
- * Responsável por armazenar e recuperar os registros de acesso.
- * Os dados são salvos em src/data/registros.json
+ * Camada de persistência do sistema de acesso.
+ *
+ * Padrão: salva em JSON local, para continuar funcionando em laboratório.
+ * Nuvem: se FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS ou
+ * FIREBASE_SERVICE_ACCOUNT_BASE64 estiver configurado, salva no Firestore.
  */
 
-const fs   = require("fs");
+const fs = require("fs");
 const path = require("path");
 
-const DATA_DIR  = path.join(__dirname, "data");
+const DATA_DIR = path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "registros.json");
 
-// Garante que o diretório e o arquivo existam
-function init() {
+let firestore = null;
+
+function firebaseAtivo() {
+  return !!(
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+  );
+}
+
+function carregarServiceAccount() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    const json = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString("utf-8");
+    return JSON.parse(json);
+  }
+
+  const servicePath = process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!servicePath) return null;
+
+  return JSON.parse(fs.readFileSync(servicePath, "utf-8"));
+}
+
+function getFirestore() {
+  if (!firebaseAtivo()) return null;
+  if (firestore) return firestore;
+
+  const admin = require("firebase-admin");
+  const serviceAccount = carregarServiceAccount();
+
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+  }
+
+  firestore = admin.firestore();
+  return firestore;
+}
+
+function storageMode() {
+  return firebaseAtivo() ? "firebase-firestore" : "json-local";
+}
+
+function initLocal() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
@@ -20,9 +65,8 @@ function init() {
   }
 }
 
-// Lê todos os dados do arquivo
-function lerDados() {
-  init();
+function lerDadosLocal() {
+  initLocal();
   try {
     const conteudo = fs.readFileSync(DATA_FILE, "utf-8");
     return JSON.parse(conteudo);
@@ -31,9 +75,8 @@ function lerDados() {
   }
 }
 
-// Salva todos os dados no arquivo
-function salvarDados(dados) {
-  init();
+function salvarDadosLocal(dados) {
+  initLocal();
   fs.writeFileSync(DATA_FILE, JSON.stringify(dados, null, 2));
 }
 
@@ -42,8 +85,11 @@ function salvarDados(dados) {
  * @param {string} ra - RA de 6 dígitos do aluno
  * @returns {{ ok: boolean, mensagem: string, registro?: object }}
  */
-function registrarEntrada(ra) {
-  const dados = lerDados();
+async function registrarEntrada(ra) {
+  const db = getFirestore();
+  if (db) return registrarEntradaFirebase(db, ra);
+
+  const dados = lerDadosLocal();
 
   if (dados.ativos[ra]) {
     return { ok: false, mensagem: `RA ${ra} já está no laboratório. Escaneie para registrar saída.` };
@@ -64,7 +110,7 @@ function registrarEntrada(ra) {
   dados.registros.push(registro);
   dados.ativos[ra] = { id, entrada_ts: agora.getTime() };
 
-  salvarDados(dados);
+  salvarDadosLocal(dados);
 
   return { ok: true, tipo: "entrada", mensagem: "Entrada registrada com sucesso.", registro };
 }
@@ -74,8 +120,11 @@ function registrarEntrada(ra) {
  * @param {string} ra - RA de 6 dígitos do aluno
  * @returns {{ ok: boolean, mensagem: string, registro?: object }}
  */
-function registrarSaida(ra) {
-  const dados = lerDados();
+async function registrarSaida(ra) {
+  const db = getFirestore();
+  if (db) return registrarSaidaFirebase(db, ra);
+
+  const dados = lerDadosLocal();
 
   if (!dados.ativos[ra]) {
     return { ok: false, mensagem: `RA ${ra} não possui entrada registrada. Escaneie para registrar entrada.` };
@@ -93,7 +142,7 @@ function registrarSaida(ra) {
   }
 
   delete dados.ativos[ra];
-  salvarDados(dados);
+  salvarDadosLocal(dados);
 
   return {
     ok: true,
@@ -106,24 +155,33 @@ function registrarSaida(ra) {
 /**
  * Retorna todos os registros, do mais recente ao mais antigo.
  */
-function listarRegistros() {
-  const dados = lerDados();
+async function listarRegistros() {
+  const db = getFirestore();
+  if (db) return listarRegistrosFirebase(db);
+
+  const dados = lerDadosLocal();
   return [...dados.registros].reverse();
 }
 
 /**
  * Retorna apenas os alunos atualmente no laboratório.
  */
-function listarAtivos() {
-  const dados = lerDados();
+async function listarAtivos() {
+  const db = getFirestore();
+  if (db) return listarAtivosFirebase(db);
+
+  const dados = lerDadosLocal();
   return dados.ativos;
 }
 
 /**
  * Remove todos os registros e limpa os ativos.
  */
-function limparTudo() {
-  salvarDados({ registros: [], ativos: {} });
+async function limparTudo() {
+  const db = getFirestore();
+  if (db) return limparTudoFirebase(db);
+
+  salvarDadosLocal({ registros: [], ativos: {} });
 }
 
 // Utilitário: formata milissegundos em "Xh Ymin Zs"
@@ -137,10 +195,92 @@ function formatarDuracao(ms) {
   return `${h}h ${String(rm).padStart(2, "0")}min`;
 }
 
+async function registrarEntradaFirebase(db, ra) {
+  const ativoRef = db.collection("ativos").doc(ra);
+  const ativoSnap = await ativoRef.get();
+
+  if (ativoSnap.exists) {
+    return { ok: false, mensagem: `RA ${ra} já está no laboratório. Escaneie para registrar saída.` };
+  }
+
+  const agora = new Date();
+  const id = `${agora.getTime()}_${ra}`;
+  const registro = {
+    id,
+    ra,
+    entrada: agora.toISOString(),
+    saida: null,
+    duracao_ms: null,
+    duracao_fmt: null,
+    storage: "firebase-firestore",
+  };
+
+  const batch = db.batch();
+  batch.set(db.collection("registros").doc(id), registro);
+  batch.set(ativoRef, { id, entrada_ts: agora.getTime(), entrada: registro.entrada });
+  await batch.commit();
+
+  return { ok: true, tipo: "entrada", mensagem: "Entrada registrada com sucesso na nuvem.", registro };
+}
+
+async function registrarSaidaFirebase(db, ra) {
+  const ativoRef = db.collection("ativos").doc(ra);
+  const ativoSnap = await ativoRef.get();
+
+  if (!ativoSnap.exists) {
+    return { ok: false, mensagem: `RA ${ra} não possui entrada registrada. Escaneie para registrar entrada.` };
+  }
+
+  const ativo = ativoSnap.data();
+  const agora = new Date();
+  const duracao = agora.getTime() - ativo.entrada_ts;
+  const registroRef = db.collection("registros").doc(ativo.id);
+  const registroSnap = await registroRef.get();
+
+  const registro = {
+    ...(registroSnap.exists ? registroSnap.data() : { id: ativo.id, ra }),
+    saida: agora.toISOString(),
+    duracao_ms: duracao,
+    duracao_fmt: formatarDuracao(duracao),
+    storage: "firebase-firestore",
+  };
+
+  const batch = db.batch();
+  batch.set(registroRef, registro, { merge: true });
+  batch.delete(ativoRef);
+  await batch.commit();
+
+  return { ok: true, tipo: "saida", mensagem: "Saída registrada com sucesso na nuvem.", registro };
+}
+
+async function listarRegistrosFirebase(db) {
+  const snap = await db.collection("registros").orderBy("entrada", "desc").get();
+  return snap.docs.map(doc => doc.data());
+}
+
+async function listarAtivosFirebase(db) {
+  const snap = await db.collection("ativos").get();
+  const ativos = {};
+  snap.docs.forEach(doc => {
+    ativos[doc.id] = doc.data();
+  });
+  return ativos;
+}
+
+async function limparTudoFirebase(db) {
+  for (const collectionName of ["registros", "ativos"]) {
+    const snap = await db.collection(collectionName).get();
+    const batch = db.batch();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }
+}
+
 module.exports = {
   registrarEntrada,
   registrarSaida,
   listarRegistros,
   listarAtivos,
   limparTudo,
+  storageMode,
 };

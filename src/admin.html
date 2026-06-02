@@ -48,6 +48,10 @@
       <div class="stat-label">Tempo médio</div>
       <div class="stat-val green" id="s-media">—</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-label">Armazenamento</div>
+      <div class="stat-val blue" id="s-storage">—</div>
+    </div>
   </div>
 
   <!-- Filtros -->
@@ -132,6 +136,8 @@
     document.getElementById("s-hoje").textContent   = hoje_.length;
     document.getElementById("s-total").textContent  = data.registros.length;
     document.getElementById("s-media").textContent  = completos.length ? formatarDuracao(avg) : "—";
+    document.getElementById("s-storage").textContent =
+      data.storage === "firebase-firestore" ? "Nuvem" : "Local";
   }
 
   function filtrar() {
