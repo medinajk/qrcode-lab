@@ -78,8 +78,26 @@ app.get(["/entrada", "/saida"], (req, res) => {
   res.sendFile(path.join(__dirname, "checkin.html"));
 });
 
-app.get("/health", (req, res) => {
-  res.json({ ok: true, storage: db.storageMode() });
+app.get("/health", async (req, res) => {
+  try {
+    await db.listarAtivos();
+    res.json({
+      ok: true,
+      storage: db.storageMode(),
+      firestore: "connected",
+      databaseId: process.env.FIREBASE_DATABASE_ID || "(default)",
+    });
+  } catch (err) {
+    console.error("Erro na verificacao do Firestore:", err);
+    res.status(500).json({
+      ok: false,
+      storage: db.storageMode(),
+      firestore: "error",
+      databaseId: process.env.FIREBASE_DATABASE_ID || "(default)",
+      errorCode: err.code || null,
+      errorMessage: err.message,
+    });
+  }
 });
 
 app.post("/checkin/entrada", (req, res) => registrarAcesso(req, res, "entrada"));
