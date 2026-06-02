@@ -5,6 +5,7 @@
  * Padrão: salva em JSON local, para continuar funcionando em laboratório.
  * Nuvem: se FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS ou
  * FIREBASE_SERVICE_ACCOUNT_BASE64 estiver configurado, salva no Firestore.
+ * FIREBASE_DATABASE_ID seleciona um banco nomeado; sem ele, usa "(default)".
  */
 
 const fs = require("fs");
@@ -40,6 +41,7 @@ function getFirestore() {
   if (firestore) return firestore;
 
   const admin = require("firebase-admin");
+  const { getFirestore: getAdminFirestore } = require("firebase-admin/firestore");
   const serviceAccount = carregarServiceAccount();
 
   if (!admin.apps.length) {
@@ -48,7 +50,9 @@ function getFirestore() {
     });
   }
 
-  firestore = admin.firestore();
+  firestore = process.env.FIREBASE_DATABASE_ID
+    ? getAdminFirestore(admin.app(), process.env.FIREBASE_DATABASE_ID)
+    : admin.firestore();
   return firestore;
 }
 

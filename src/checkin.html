@@ -22,9 +22,11 @@
       </div>
       <div class="header-text">
         <h1>Laboratório</h1>
-        <p>Registro de acesso</p>
+        <p id="access-subtitle">Registro de acesso</p>
       </div>
     </div>
+
+    <div class="access-mode" id="access-mode"></div>
 
     <label for="ra">RA do Aluno</label>
     <input
@@ -59,6 +61,21 @@
 
 <script>
   let resetTimer = null;
+  const tipoAcesso = window.location.pathname === "/saida" ? "saida" : "entrada";
+
+  function configurarPagina() {
+    const isEntrada = tipoAcesso === "entrada";
+    const mode = document.getElementById("access-mode");
+    const subtitle = document.getElementById("access-subtitle");
+    const btn = document.getElementById("btn-submit");
+
+    document.title = `Laboratorio - Registro de ${isEntrada ? "entrada" : "saida"}`;
+    mode.textContent = isEntrada ? "Registrar entrada" : "Registrar saida";
+    mode.className = `access-mode ${tipoAcesso}`;
+    subtitle.textContent = isEntrada ? "Entrada no laboratorio" : "Saida do laboratorio";
+    btn.textContent = isEntrada ? "Registrar entrada" : "Registrar saida";
+    btn.className = `btn-primary ${tipoAcesso}`;
+  }
 
   function pad(n) { return String(n).padStart(2, "0"); }
   function fmtTime(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
@@ -73,8 +90,8 @@
 
     err.style.display = "none";
     btn.disabled = v.length !== 6;
-    btn.className = "btn-primary";
-    btn.textContent = "Registrar acesso";
+    btn.className = `btn-primary ${tipoAcesso}`;
+    btn.textContent = tipoAcesso === "entrada" ? "Registrar entrada" : "Registrar saida";
   }
 
   async function enviar() {
@@ -86,7 +103,7 @@
     btn.textContent = "Aguarde...";
 
     try {
-      const res  = await fetch("/checkin", {
+      const res  = await fetch(`/checkin/${tipoAcesso}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ra }),
@@ -98,8 +115,8 @@
         err.textContent    = data.mensagem;
         err.style.display  = "block";
         btn.disabled       = false;
-        btn.textContent   = "Registrar acesso";
-      btn.className     = "btn-primary";
+        btn.textContent   = tipoAcesso === "entrada" ? "Registrar entrada" : "Registrar saida";
+      btn.className     = `btn-primary ${tipoAcesso}`;
       return;
     }
 
@@ -110,7 +127,7 @@
       err.textContent   = "Erro de conexão. Tente novamente.";
       err.style.display = "block";
       btn.disabled      = false;
-      btn.textContent   = "Registrar acesso";
+      btn.textContent   = tipoAcesso === "entrada" ? "Registrar entrada" : "Registrar saida";
     }
   }
 
@@ -164,12 +181,14 @@
 
     ra.value          = "";
     btn.disabled      = true;
-    btn.textContent   = "Registrar acesso";
-    btn.className     = "btn-primary";
+    btn.textContent   = tipoAcesso === "entrada" ? "Registrar entrada" : "Registrar saida";
+    btn.className     = `btn-primary ${tipoAcesso}`;
     err.style.display = "none";
 
     ra.focus();
   }
+
+  configurarPagina();
 </script>
 
 </body>

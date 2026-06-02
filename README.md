@@ -2,6 +2,11 @@
 
 Sistema de registro de entrada e saída de alunos no laboratório via QR Code.
 
+## Deploy online
+
+Para publicar o sistema no Render com QR Codes fixos separados para entrada e
+saida, consulte [`DEPLOY_ONLINE.md`](DEPLOY_ONLINE.md).
+
 ## Instalação
 
 ### Pré-requisitos

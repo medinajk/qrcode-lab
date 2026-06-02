@@ -1,66 +1,111 @@
 /**
- * server.js
- * Servidor principal da aplicação.
- * Serve a página de check-in, o painel admin e expõe a API REST.
+ * Servidor principal da aplicacao.
  *
- * Rotas:
- *   GET  /            → página de check-in (escaneada pelo QR Code)
- *   POST /checkin     → registra entrada ou saída do aluno
- *   GET  /admin       → painel administrativo
- *   GET  /admin/dados → retorna JSON com todos os registros
- *   POST /admin/limpar → apaga todos os registros
+ * Rotas publicas:
+ *   GET  /entrada          -> formulario para registrar entrada
+ *   GET  /saida            -> formulario para registrar saida
+ *   POST /checkin/entrada  -> registra entrada
+ *   POST /checkin/saida    -> registra saida
+ *   GET  /health           -> verificacao usada pela hospedagem
+ *
+ * Rotas administrativas:
+ *   GET  /admin
+ *   GET  /admin/dados
+ *   POST /admin/limpar
  */
 
 const express = require("express");
-const path    = require("path");
+const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
-const db      = require("./database");
+const db = require("./database");
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// Serve arquivos estáticos (CSS/JS/etc.).
-// Os arquivos HTML estão em src/, mas o CSS está na raiz do projeto.
-// Por isso servimos também a pasta pai (raiz do projeto).
 app.use(express.static(path.join(__dirname)));
-app.use(express.static(path.join(__dirname, "..")));
 
-// ─── Página de check-in ─────────────────────────────────────────────────────
+function validarRa(ra) {
+  return typeof ra === "string" && /^\d{6}$/.test(ra);
+}
+
+async function registrarAcesso(req, res, tipo) {
+  try {
+    const { ra } = req.body;
+
+    if (!validarRa(ra)) {
+      return res.status(400).json({
+        ok: false,
+        mensagem: "RA invalido. Informe exatamente 6 digitos.",
+      });
+    }
+
+    const resultado = tipo === "entrada"
+      ? await db.registrarEntrada(ra)
+      : await db.registrarSaida(ra);
+
+    return res.status(resultado.ok ? 200 : 409).json(resultado);
+  } catch (err) {
+    console.error(`Erro ao registrar ${tipo}:`, err);
+    return res.status(500).json({
+      ok: false,
+      mensagem: `Erro ao registrar ${tipo}.`,
+    });
+  }
+}
+
+function protegerAdmin(req, res, next) {
+  const senhaEsperada = process.env.ADMIN_PASSWORD;
+  if (!senhaEsperada) return next();
+
+  const auth = req.headers.authorization || "";
+  const [tipo, credencial] = auth.split(" ");
+
+  if (tipo === "Basic" && credencial) {
+    const [usuario, senha] = Buffer.from(credencial, "base64").toString("utf8").split(":");
+    if (usuario === "admin" && senha === senhaEsperada) return next();
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="Painel administrativo"');
+  return res.status(401).send("Autenticacao necessaria.");
+}
 
 app.get("/", (req, res) => {
+  res.redirect("/entrada");
+});
+
+app.get(["/entrada", "/saida"], (req, res) => {
   res.sendFile(path.join(__dirname, "checkin.html"));
 });
 
-// ─── API de check-in ─────────────────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({ ok: true, storage: db.storageMode() });
+});
 
+app.post("/checkin/entrada", (req, res) => registrarAcesso(req, res, "entrada"));
+app.post("/checkin/saida", (req, res) => registrarAcesso(req, res, "saida"));
+
+// Mantem compatibilidade com o QR Code antigo, que alternava entrada e saida.
 app.post("/checkin", async (req, res) => {
   try {
     const { ra } = req.body;
 
-    // Validação
-    if (!ra || !/^\d{6}$/.test(ra)) {
-      return res.status(400).json({ ok: false, mensagem: "RA inválido. Informe exatamente 6 dígitos." });
+    if (!validarRa(ra)) {
+      return res.status(400).json({
+        ok: false,
+        mensagem: "RA invalido. Informe exatamente 6 digitos.",
+      });
     }
 
-    // Verifica se já está no laboratório (saída) ou não (entrada)
     const ativos = await db.listarAtivos();
-
-    if (ativos[ra]) {
-      const resultado = await db.registrarSaida(ra);
-      return res.json(resultado);
-    } else {
-      const resultado = await db.registrarEntrada(ra);
-      return res.json(resultado);
-    }
+    return registrarAcesso(req, res, ativos[ra] ? "saida" : "entrada");
   } catch (err) {
-    console.error("Erro no check-in:", err);
+    console.error("Erro no check-in automatico:", err);
     return res.status(500).json({ ok: false, mensagem: "Erro ao registrar acesso." });
   }
 });
 
-// ─── Painel admin ────────────────────────────────────────────────────────────
+app.use("/admin", protegerAdmin);
 
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
@@ -70,8 +115,8 @@ app.get("/admin/dados", async (req, res) => {
   try {
     res.json({
       registros: await db.listarRegistros(),
-      ativos:    await db.listarAtivos(),
-      storage:   db.storageMode(),
+      ativos: await db.listarAtivos(),
+      storage: db.storageMode(),
     });
   } catch (err) {
     console.error("Erro ao carregar dados:", err);
@@ -89,17 +134,9 @@ app.post("/admin/limpar", async (req, res) => {
   }
 });
 
-// ─── Inicia servidor ─────────────────────────────────────────────────────────
-
 app.listen(PORT, () => {
-  console.log("╔════════════════════════════════════════╗");
-  console.log("║   Laboratório — Sistema de Check-in    ║");
-  console.log("╚════════════════════════════════════════╝");
-  console.log(`\n🚀 Servidor rodando em http://localhost:${PORT}`);
-  console.log(`\n📋 Rotas disponíveis:`);
-  console.log(`   Check-in  →  http://localhost:${PORT}/`);
-  console.log(`   Admin     →  http://localhost:${PORT}/admin`);
-  console.log(`\n📌 Para gerar o QR Code, execute:`);
-  console.log(`   node src/generateQR.js http://<IP_DA_MAQUINA>:${PORT}`);
-  console.log(`\n💾 Dados salvos em: src/data/registros.json\n`);
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`Entrada: http://localhost:${PORT}/entrada`);
+  console.log(`Saida:   http://localhost:${PORT}/saida`);
+  console.log(`Admin:   http://localhost:${PORT}/admin`);
 });
