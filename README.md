@@ -147,4 +147,3 @@ npm start
 
 Quando o Firebase estiver ativo, o painel administrativo mostrará **Armazenamento: Nuvem**. Sem Firebase, o sistema continua funcionando em modo local com JSON.
 
-> Nunca envie o arquivo de credenciais JSON para o GitHub, Drive público ou AVA.
