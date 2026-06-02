@@ -120,7 +120,13 @@ app.get("/admin/dados", async (req, res) => {
     });
   } catch (err) {
     console.error("Erro ao carregar dados:", err);
-    res.status(500).json({ registros: [], ativos: {}, storage: db.storageMode(), erro: true });
+    res.status(500).json({
+      registros: [],
+      ativos: {},
+      storage: db.storageMode(),
+      erro: true,
+      mensagem: "Erro ao consultar o Firestore. Verifique as variaveis do Firebase no Render.",
+    });
   }
 });
 

@@ -109,8 +109,12 @@
 
   async function carregar() {
     try {
-      const res  = await fetch("/admin/dados");
+      const res  = await fetch("/admin/dados", { credentials: "same-origin" });
       const data = await res.json();
+
+      if (!res.ok || data.erro) {
+        throw new Error(data.mensagem || "Nao foi possivel consultar os registros.");
+      }
 
       todosRegistros = data.registros;
       atualizarStats(data);
@@ -121,6 +125,15 @@
 
     } catch (e) {
       console.error("Erro ao carregar dados:", e);
+      document.getElementById("tbody").innerHTML = `
+        <tr>
+          <td colspan="6" class="empty">
+            <strong>Erro ao carregar registros</strong>
+            ${e.message}
+          </td>
+        </tr>`;
+      document.getElementById("last-update").textContent =
+        "Falha ao atualizar. Verifique a configuracao do servidor.";
     }
   }
 
@@ -186,7 +199,7 @@
 
   async function limpar() {
     if (!confirm("Apagar todos os registros? Esta ação não pode ser desfeita.")) return;
-    await fetch("/admin/limpar", { method: "POST" });
+    await fetch("/admin/limpar", { method: "POST", credentials: "same-origin" });
     carregar();
   }
 
